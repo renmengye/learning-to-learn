@@ -80,6 +80,7 @@ def _nested_variable(init, name=None, trainable=False):
 def _wrap_variable_creation(func, custom_getter):
   """Provides a custom getter for all variable creations."""
   original_get_variable = tf.get_variable
+
   def custom_get_variable(*args, **kwargs):
     if hasattr(kwargs, "custom_getter"):
       raise AttributeError("Custom getters are not supported for optimizee "
@@ -238,9 +239,13 @@ class MetaOptimizer(object):
               "net_options": {
                   "layers": (20, 20),
                   "preprocess_name": "LogAndSign",
-                  "preprocess_options": {"k": 5},
+                  "preprocess_options": {
+                      "k": 5
+                  },
                   "scale": 0.01,
-              }}}
+              }
+          }
+      }
     else:
       self._config = kwargs
 
@@ -300,15 +305,31 @@ class MetaOptimizer(object):
       for i, (subset, key) in enumerate(zip(subsets, net_keys)):
         net = nets[key]
         with tf.name_scope("state_{}".format(i)):
-          state.append(_nested_variable(
-              [net.initial_state_for_inputs(x[j], dtype=tf.float32)
-               for j in subset],
-              name="state", trainable=False))
+          state.append(
+              _nested_variable(
+                  [
+                      net.initial_state_for_inputs(x[j], dtype=tf.float32)
+                      for j in subset
+                  ],
+                  name="state",
+                  trainable=False))
 
     def update(net, fx, x, state):
       """Parameter and RNN state update."""
       with tf.name_scope("gradients"):
         gradients = tf.gradients(fx, x)
+        gradients_names = [g.name for g in gradients]
+        gradients_names = [
+            name.split('mlp/')[1].split('/Reshape')[0].split('/MatMul_1')[0]
+            for name in gradients_names
+        ]
+        print_values = ['grad']
+        for gg, name in zip(gradients, gradients_names):
+          print_values.append(name)
+          print_values.append(tf.reduce_mean(tf.abs(gg)))
+        dbg = tf.Print(tf.constant(0.0), print_values, summarize=100)
+        with tf.control_dependencies([dbg]):
+          gradients = [tf.identity(g) for g in gradients]
 
         # Stopping the gradient here corresponds to what was done in the
         # original L2L NIPS submission. However it looks like things like
@@ -319,6 +340,14 @@ class MetaOptimizer(object):
 
       with tf.name_scope("deltas"):
         deltas, state_next = zip(*[net(g, s) for g, s in zip(gradients, state)])
+        print_values = ['delta']
+        for gg, name in zip(gradients, gradients_names):
+          print_values.append(name)
+          print_values.append(tf.reduce_mean(tf.abs(gg)))
+        dbg = tf.Print(tf.constant(0.0), print_values, summarize=100)
+
+        with tf.control_dependencies([dbg]):
+          deltas = [tf.identity(d) for d in deltas]
         state_next = list(state_next)
 
       return deltas, state_next
@@ -347,8 +376,8 @@ class MetaOptimizer(object):
       return t_next, fx_array, x_next, state_next
 
     # Define the while loop.
-    fx_array = tf.TensorArray(tf.float32, size=len_unroll + 1,
-                              clear_after_read=False)
+    fx_array = tf.TensorArray(
+        tf.float32, size=len_unroll + 1, clear_after_read=False)
     _, fx_array, x_final, s_final = tf.while_loop(
         cond=lambda t, *_: t < len_unroll,
         body=time_step,
@@ -365,8 +394,7 @@ class MetaOptimizer(object):
 
     # Reset the state; should be called at the beginning of an epoch.
     with tf.name_scope("reset"):
-      variables = (nest.flatten(state) +
-                   x + constants)
+      variables = (nest.flatten(state) + x + constants)
       # Empty array as part of the reset process.
       reset = [tf.variables_initializer(variables), fx_array.close()]
 
