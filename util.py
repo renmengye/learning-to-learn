@@ -23,16 +23,82 @@ from timeit import default_timer as timer
 
 import numpy as np
 from six.moves import xrange
+import tensorflow as tf
 
 import problems
 
 
-def run_epoch(sess, cost_op, ops, reset, num_unrolls):
+def run_epoch(sess, cost_op, ops, reset, num_unrolls, epoch_idx,
+              summary_writer):
   """Runs one optimization epoch."""
   start = timer()
   sess.run(reset)
-  for _ in xrange(num_unrolls):
+  for step in xrange(num_unrolls):
     cost = sess.run([cost_op] + ops)[0]
+
+    print("Cost = {}".format(cost))
+    summary = tf.Summary()
+    summary.value.add(tag='loss', simple_value=cost)
+    summary_writer.add_summary(
+        summary, global_step=step + epoch_idx * num_unrolls)
+
+  return timer() - start, cost
+
+
+def run_epoch_val(sess, cost_op, ops, reset, num_unrolls, epoch_idx,
+              summary_writer):
+  """Runs one optimization epoch."""
+  start = timer()
+  sess.run(reset)
+  for step in xrange(num_unrolls):
+    cost = sess.run([cost_op] + ops)[0]
+
+    summary = tf.Summary()
+    summary.value.add(tag='val_loss', simple_value=cost)
+    summary_writer.add_summary(
+        summary, global_step=step + epoch_idx * num_unrolls)
+
+  return timer() - start, cost
+
+
+def run_epoch_eval(sess,
+                   cost_op,
+                   ops,
+                   reset_op,
+                   num_unrolls,
+                   summary_op=None,
+                   summary_writer=None,
+                   run_reset=True):
+  """Runs one optimization epoch."""
+  start = timer()
+  if run_reset:
+    sess.run(reset_op)
+
+  if summary_op is None:
+    for step in xrange(num_unrolls):
+      cost = sess.run([cost_op] + ops)[0]
+      summary = tf.Summary()
+      summary.value.add(tag='loss', simple_value=cost)
+      summary_writer.add_summary(summary, global_step=step)
+      print(step, cost)
+      # raw_input("wait")
+  else:
+    assert (summary_writer is not None)
+    for step in xrange(num_unrolls):
+      # summ, cost = sess.run([summary_op, cost_op])
+      # sess.run(ops)
+
+      summ, cost, _ = sess.run([summary_op, cost_op] + ops)
+      summary = tf.Summary()
+      summary.value.add(tag='loss', simple_value=cost)
+      summary_writer.add_summary(summary, global_step=step)
+      summary_writer.add_summary(summ, global_step=step)
+      print(step, cost)
+      # raw_input("wait")
+
+    # we have to run in the end to skip the error
+    sess.run(reset_op)
+
   return timer() - start, cost
 
 
@@ -53,7 +119,9 @@ def get_default_net_config(name, path):
       "net_options": {
           "layers": (20, 20),
           "preprocess_name": "LogAndSign",
-          "preprocess_options": {"k": 5},
+          "preprocess_options": {
+              "k": 5
+          },
           "scale": 0.01,
       },
       "net_path": get_net_path(name, path)
@@ -64,33 +132,47 @@ def get_config(problem_name, path=None):
   """Returns problem configuration."""
   if problem_name == "simple":
     problem = problems.simple()
-    net_config = {"cw": {
-        "net": "CoordinateWiseDeepLSTM",
-        "net_options": {"layers": (), "initializer": "zeros"},
-        "net_path": get_net_path("cw", path)
-    }}
+    net_config = {
+        "cw": {
+            "net": "CoordinateWiseDeepLSTM",
+            "net_options": {
+                "layers": (),
+                "initializer": "zeros"
+            },
+            "net_path": get_net_path("cw", path)
+        }
+    }
     net_assignments = None
   elif problem_name == "simple-multi":
     problem = problems.simple_multi_optimizer()
     net_config = {
         "cw": {
             "net": "CoordinateWiseDeepLSTM",
-            "net_options": {"layers": (), "initializer": "zeros"},
+            "net_options": {
+                "layers": (),
+                "initializer": "zeros"
+            },
             "net_path": get_net_path("cw", path)
         },
         "adam": {
             "net": "Adam",
-            "net_options": {"learning_rate": 0.1}
+            "net_options": {
+                "learning_rate": 0.1
+            }
         }
     }
     net_assignments = [("cw", ["x_0"]), ("adam", ["x_1"])]
   elif problem_name == "quadratic":
     problem = problems.quadratic(batch_size=128, num_dims=10)
-    net_config = {"cw": {
-        "net": "CoordinateWiseDeepLSTM",
-        "net_options": {"layers": (20, 20)},
-        "net_path": get_net_path("cw", path)
-    }}
+    net_config = {
+        "cw": {
+            "net": "CoordinateWiseDeepLSTM",
+            "net_options": {
+                "layers": (20, 20)
+            },
+            "net_path": get_net_path("cw", path)
+        }
+    }
     net_assignments = None
   elif problem_name == "mnist":
     mode = "train" if path is None else "test"
@@ -99,18 +181,14 @@ def get_config(problem_name, path=None):
     net_assignments = None
   elif problem_name == "cifar":
     mode = "train" if path is None else "test"
-    problem = problems.cifar10("cifar10",
-                               conv_channels=(16, 16, 16),
-                               linear_layers=(32,),
-                               mode=mode)
+    problem = problems.cifar10(
+        "cifar10", conv_channels=(16, 16, 16), linear_layers=(32,), mode=mode)
     net_config = {"cw": get_default_net_config("cw", path)}
     net_assignments = None
   elif problem_name == "cifar-multi":
     mode = "train" if path is None else "test"
-    problem = problems.cifar10("cifar10",
-                               conv_channels=(16, 16, 16),
-                               linear_layers=(32,),
-                               mode=mode)
+    problem = problems.cifar10(
+        "cifar10", conv_channels=(16, 16, 16), linear_layers=(32,), mode=mode)
     net_config = {
         "conv": get_default_net_config("conv", path),
         "fc": get_default_net_config("fc", path)

@@ -23,23 +23,25 @@ import tensorflow as tf
 
 from tensorflow.contrib.learn.python.learn import monitored_session as ms
 
+import os
 import meta
 import util
 
 flags = tf.flags
 logging = tf.logging
 
-
 FLAGS = flags.FLAGS
 flags.DEFINE_string("optimizer", "L2L", "Optimizer.")
 flags.DEFINE_string("path", None, "Path to saved meta-optimizer network.")
-flags.DEFINE_integer("num_epochs", 100, "Number of evaluation epochs.")
-flags.DEFINE_integer("seed", None, "Seed for TensorFlow's RNG.")
+flags.DEFINE_integer("num_epochs", 1, "Number of evaluation epochs.")
+flags.DEFINE_integer("seed", 1234, "Seed for TensorFlow's RNG.")
 
 flags.DEFINE_string("problem", "simple", "Type of problem.")
 flags.DEFINE_integer("num_steps", 100,
                      "Number of optimization steps per epoch.")
-flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
+flags.DEFINE_float("learning_rate", 0.1, "Learning rate.")
+flags.DEFINE_boolean("load_trained_model", False, "Load trained model.")
+flags.DEFINE_string("model_path", "exp/model", "Trained model path.")
 
 
 def main(_):
@@ -50,8 +52,8 @@ def main(_):
     tf.set_random_seed(FLAGS.seed)
 
   # Problem.
-  problem, net_config, net_assignments = util.get_config(FLAGS.problem,
-                                                         FLAGS.path)
+  problem, net_config, net_assignments = util.get_config(
+      FLAGS.problem, FLAGS.path)
 
   # Optimizer setup.
   if FLAGS.optimizer == "Adam":
@@ -63,27 +65,84 @@ def main(_):
     optimizer_reset = tf.variables_initializer(optimizer.get_slot_names())
     update = optimizer.minimize(cost_op)
     reset = [problem_reset, optimizer_reset]
+  elif FLAGS.optimizer == "SGD_MOM":
+    cost_op = problem()
+    problem_vars = tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
+    problem_reset = tf.variables_initializer(problem_vars)
+
+    optimizer = tf.train.MomentumOptimizer(FLAGS.learning_rate, 0.9)
+    optimizer_reset = tf.variables_initializer(optimizer.get_slot_names())
+    update = optimizer.minimize(cost_op)
+    reset = [problem_reset, optimizer_reset]
   elif FLAGS.optimizer == "L2L":
     if FLAGS.path is None:
       logging.warning("Evaluating untrained L2L optimizer")
+    cost_op = problem()
     optimizer = meta.MetaOptimizer(**net_config)
     meta_loss = optimizer.meta_loss(problem, 1, net_assignments=net_assignments)
-    _, update, reset, cost_op, _ = meta_loss
+    # _, update, reset, cost_op, _ = meta_loss
+    _, update, reset, _, _ = meta_loss
   else:
     raise ValueError("{} is not a valid optimizer".format(FLAGS.optimizer))
 
+  process_id = os.getpid()
+  exp_folder = os.path.join("exp", str(process_id))
+
+  if not os.path.isdir(exp_folder):
+    os.mkdir(exp_folder)
+
+  writer = tf.summary.FileWriter(exp_folder)
+  summaries = tf.summary.merge_all()
+
+  if FLAGS.problem == "mnist":
+    var_name_mlp = [
+        "mlp/linear_0/w:0", "mlp/linear_0/b:0", "mlp/linear_1/w:0",
+        "mlp/linear_1/b:0"
+    ]
+  else:
+    var_name_mlp = []
+
+  problem_vars = tf.get_collection(tf.GraphKeys.VARIABLES)
+
+  if var_name_mlp:
+    saver_vars = [vv for vv in problem_vars if vv.name in var_name_mlp]
+  else:
+    saver_vars = problem_vars
+
+  saver = tf.train.Saver(saver_vars)
+
   with ms.MonitoredSession() as sess:
+    # a quick hack!
+    regular_sess = sess._sess._sess._sess._sess
+
     # Prevent accidental changes to the graph.
     tf.get_default_graph().finalize()
 
+    if FLAGS.load_trained_model == True:
+      print("We are loading trained model here!")
+      saver.restore(regular_sess, FLAGS.model_path)
+
     total_time = 0
     total_cost = 0
-    for _ in xrange(FLAGS.num_epochs):
+    for step in xrange(FLAGS.num_epochs):
       # Training.
-      time, cost = util.run_epoch(sess, cost_op, [update], reset,
-                                  num_unrolls)
+      # time, cost = util.run_epoch(sess, cost_op, [update], reset,
+      #                             num_unrolls)
+
+      time, cost = util.run_epoch_eval(
+          sess,
+          cost_op, [update],
+          reset,
+          num_unrolls,
+          summary_op=summaries,
+          summary_writer=writer,
+          run_reset=False)
+      writer.flush()
+
       total_time += time
       total_cost += cost
+
+    saver.save(regular_sess, os.path.join(exp_folder, "model"))
 
     # Results.
     util.print_stats("Epoch {}".format(FLAGS.num_epochs), total_cost,

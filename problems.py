@@ -165,7 +165,7 @@ def mnist(layers,  # pylint: disable=invalid-name
   network = snt.Sequential([snt.BatchFlatten(), mlp])
 
   def build():
-    indices = tf.random_uniform([batch_size], 0, data.num_examples, tf.int64)
+    indices = tf.random_uniform([batch_size], 0, data.num_examples, tf.int64, seed=1234)
     batch_images = tf.gather(images, indices)
     batch_labels = tf.gather(labels, indices)
     output = network(batch_images)

@@ -45,7 +45,8 @@ flags.DEFINE_integer("num_steps", 100,
 flags.DEFINE_integer("unroll_length", 20, "Meta-optimizer unroll length.")
 flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
 flags.DEFINE_boolean("second_derivatives", False, "Use second derivatives.")
-
+flags.DEFINE_boolean("load_trained_model", False, "Load trained model.")
+flags.DEFINE_string("model_path", "exp/model", "Trained model path.")
 
 def main(_):
   # Configuration.
@@ -53,12 +54,14 @@ def main(_):
 
   if FLAGS.save_path is not None:
     if os.path.exists(FLAGS.save_path):
-      raise ValueError("Folder {} already exists".format(FLAGS.save_path))
+      # raise ValueError("Folder {} already exists".format(FLAGS.save_path))
+      pass
     else:
       os.mkdir(FLAGS.save_path)
 
   # Problem.
   problem, net_config, net_assignments = util.get_config(FLAGS.problem)
+  loss_op = problem()
 
   # Optimizer setup.
   optimizer = meta.MetaOptimizer(**net_config)
@@ -68,46 +71,77 @@ def main(_):
       net_assignments=net_assignments,
       second_derivatives=FLAGS.second_derivatives)
   step, update, reset, cost_op, _ = minimize
+  
+  if FLAGS.problem == "mnist":
+    var_name_mlp = [
+        "mlp/linear_0/w:0", "mlp/linear_0/b:0", "mlp/linear_1/w:0",
+        "mlp/linear_1/b:0"
+    ]
+  else:
+    var_name_mlp = []
+
+  problem_vars = tf.get_collection(tf.GraphKeys.VARIABLES)
+
+  if var_name_mlp:
+    saver_vars = [vv for vv in problem_vars if vv.name in var_name_mlp]
+  else:
+    saver_vars = problem_vars
+
+  saver = tf.train.Saver(saver_vars)
+
+  process_id = os.getpid()
+  exp_folder = os.path.join("exp", str(process_id))  
+  writer = tf.summary.FileWriter(exp_folder)
 
   with ms.MonitoredSession() as sess:
+    # a quick hack!
+    regular_sess = sess._sess._sess._sess._sess
+
     # Prevent accidental changes to the graph.
     tf.get_default_graph().finalize()
 
+    if FLAGS.load_trained_model == True:
+      print("We are loading trained model here!")
+      saver.restore(regular_sess, FLAGS.model_path)
+      
     best_evaluation = float("inf")
     total_time = 0
     total_cost = 0
     for e in xrange(FLAGS.num_epochs):
+      print("True loss = {}".format(sess.run(loss_op)))
+      
       # Training.
       time, cost = util.run_epoch(sess, cost_op, [update, step], reset,
-                                  num_unrolls)
+                                  num_unrolls, e, writer)
       total_time += time
       total_cost += cost
+      writer.flush()
 
       # Logging.
       if (e + 1) % FLAGS.log_period == 0:
-        util.print_stats("Epoch {}".format(e + 1), total_cost, total_time,
-                         FLAGS.log_period)
+        # util.print_stats("Epoch {}".format(e + 1), total_cost, total_time,
+        #                  FLAGS.log_period)
         total_time = 0
         total_cost = 0
 
       # Evaluation.
-      if (e + 1) % FLAGS.evaluation_period == 0:
+      if (e + 1) % FLAGS.evaluation_period == 0 or e == 0:
         eval_cost = 0
         eval_time = 0
         for _ in xrange(FLAGS.evaluation_epochs):
-          time, cost = util.run_epoch(sess, cost_op, [update], reset,
-                                      num_unrolls)
+          time, cost = util.run_epoch_val(sess, cost_op, [update], reset,
+                                      num_unrolls, e, writer)
           eval_time += time
           eval_cost += cost
 
-        util.print_stats("EVALUATION", eval_cost, eval_time,
-                         FLAGS.evaluation_epochs)
+        # util.print_stats("EVALUATION", eval_cost, eval_time,
+        #                  FLAGS.evaluation_epochs)
 
         if FLAGS.save_path is not None and eval_cost < best_evaluation:
-          print("Removing previously saved meta-optimizer")
-          for f in os.listdir(FLAGS.save_path):
-            os.remove(os.path.join(FLAGS.save_path, f))
-          print("Saving meta-optimizer to {}".format(FLAGS.save_path))
+          # print("Removing previously saved meta-optimizer")
+          # for f in os.listdir(FLAGS.save_path):
+          #   os.remove(os.path.join(FLAGS.save_path, f))
+          # print("Saving meta-optimizer to {}".format(FLAGS.save_path))
           optimizer.save(sess, FLAGS.save_path)
           best_evaluation = eval_cost
 

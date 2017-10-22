@@ -318,18 +318,20 @@ class MetaOptimizer(object):
       """Parameter and RNN state update."""
       with tf.name_scope("gradients"):
         gradients = tf.gradients(fx, x)
-        gradients_names = [g.name for g in gradients]
-        gradients_names = [
-            name.split('mlp/')[1].split('/Reshape')[0].split('/MatMul_1')[0]
-            for name in gradients_names
-        ]
-        print_values = ['grad']
-        for gg, name in zip(gradients, gradients_names):
-          print_values.append(name)
-          print_values.append(tf.reduce_mean(tf.abs(gg)))
-        dbg = tf.Print(tf.constant(0.0), print_values, summarize=100)
-        with tf.control_dependencies([dbg]):
-          gradients = [tf.identity(g) for g in gradients]
+
+        # gradients_names = [g.name for g in gradients]
+        # gradients_names = [
+        #     name.split('mlp/')[1].split('/Reshape')[0].split('/MatMul_1')[0]
+        #     for name in gradients_names
+        # ]
+        # print_values = ['grad']
+        # for gg, name in zip(gradients, gradients_names):
+        #   print_values.append(name)
+        #   print_values.append(tf.reduce_mean(tf.abs(gg)))
+        # dbg = tf.Print(tf.constant(0.0), print_values, summarize=100)
+        # with tf.control_dependencies([dbg]):
+        #   gradients = [tf.identity(g) for g in gradients]
+
 
         # Stopping the gradient here corresponds to what was done in the
         # original L2L NIPS submission. However it looks like things like
@@ -340,15 +342,37 @@ class MetaOptimizer(object):
 
       with tf.name_scope("deltas"):
         deltas, state_next = zip(*[net(g, s) for g, s in zip(gradients, state)])
-        print_values = ['delta']
-        for gg, name in zip(gradients, gradients_names):
-          print_values.append(name)
-          print_values.append(tf.reduce_mean(tf.abs(gg)))
-        dbg = tf.Print(tf.constant(0.0), print_values, summarize=100)
+        deltas = [d for d in deltas]
+      #   print_values = ['delta']
+      #   for dd, name in zip(deltas, gradients_names):
+      #     print_values.append(name)
+      #     print_values.append(tf.reduce_mean(tf.abs(dd)))
+      #   dbg = tf.Print(tf.constant(0.0), print_values, summarize=100)
 
-        with tf.control_dependencies([dbg]):
-          deltas = [tf.identity(d) for d in deltas]
+      #   with tf.control_dependencies([dbg]):
+      #     deltas = [tf.identity(d) for d in deltas]
         state_next = list(state_next)
+
+      # compute the "learning rate" by delta/gradient 
+      grad_vec = tf.concat([tf.reshape(gg, [-1]) for gg in gradients], axis=0)
+      delta_vec = tf.concat([tf.reshape(dd, [-1]) for dd in deltas], axis=0)
+
+      delta_vec_norm = tf.sqrt(tf.reduce_sum(delta_vec * delta_vec))
+      grad_vec_norm = tf.sqrt(tf.reduce_sum(grad_vec * grad_vec))
+
+      # lr = tf.div(tf.abs(delta_vec), tf.abs(grad_vec) + tf.constant(1.0e-16))
+      lr = tf.div(delta_vec_norm, grad_vec_norm + tf.constant(1.0e-16))
+      log_lr = tf.log(lr)
+      # dbg = tf.Print(tf.constant(0.0), [delta_vec_norm])
+      dbg = tf.constant(0.0)
+
+      with tf.control_dependencies([dbg, log_lr]):
+        deltas = [tf.identity(d) for d in deltas]
+
+      tf.summary.scalar("learning_rate", lr)
+
+      # tf.summary.histogram("learning_rate", lr)
+      # tf.summary.histogram("log_learning_rate", log_lr)
 
       return deltas, state_next
 
