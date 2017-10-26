@@ -27,6 +27,7 @@ from tensorflow.contrib.learn.python.learn import monitored_session as ms
 
 import meta
 import util
+import cPickle as pickle
 
 flags = tf.flags
 logging = tf.logging
@@ -36,8 +37,9 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("save_path", None, "Path for saved meta-optimizer.")
 flags.DEFINE_integer("num_epochs", 10000, "Number of training epochs.")
 flags.DEFINE_integer("log_period", 100, "Log period.")
-flags.DEFINE_integer("evaluation_period", 1000, "Evaluation period.")
+flags.DEFINE_integer("evaluation_period", 10, "Evaluation period.")
 flags.DEFINE_integer("evaluation_epochs", 20, "Number of evaluation epochs.")
+flags.DEFINE_integer("seed", 1234, "Seed for TensorFlow's RNG.")
 
 flags.DEFINE_string("problem", "simple", "Type of problem.")
 flags.DEFINE_integer("num_steps", 100,
@@ -51,6 +53,9 @@ flags.DEFINE_string("model_path", "exp/model", "Trained model path.")
 def main(_):
   # Configuration.
   num_unrolls = FLAGS.num_steps // FLAGS.unroll_length
+
+  if FLAGS.seed:
+    tf.set_random_seed(FLAGS.seed)
 
   if FLAGS.save_path is not None:
     if os.path.exists(FLAGS.save_path):
@@ -93,6 +98,9 @@ def main(_):
   exp_folder = os.path.join("exp", str(process_id))  
   writer = tf.summary.FileWriter(exp_folder)
 
+  if not os.path.isdir(exp_folder):
+    os.mkdir(exp_folder)
+
   with ms.MonitoredSession() as sess:
     # a quick hack!
     regular_sess = sess._sess._sess._sess._sess
@@ -100,15 +108,22 @@ def main(_):
     # Prevent accidental changes to the graph.
     tf.get_default_graph().finalize()
 
-    if FLAGS.load_trained_model == True:
-      print("We are loading trained model here!")
-      saver.restore(regular_sess, FLAGS.model_path)
+    # if FLAGS.load_trained_model == True:
+    #   print("We are loading trained model here!")
+    #   saver.restore(regular_sess, os.path.join(FLAGS.model_path, "model"))
       
+    # init_state = regular_sess.run(optimizer.init_state)
+    # pickle.dump(init_state, open("init_state.p", "wb"))
+    
     best_evaluation = float("inf")
     total_time = 0
     total_cost = 0
     for e in xrange(FLAGS.num_epochs):
       print("True loss = {}".format(sess.run(loss_op)))
+
+      if FLAGS.load_trained_model == True:
+        print("We are loading trained model here!")
+        saver.restore(regular_sess, os.path.join(FLAGS.model_path, "model"))
       
       # Training.
       time, cost = util.run_epoch(sess, cost_op, [update, step], reset,

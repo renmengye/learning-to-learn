@@ -49,7 +49,7 @@ def run_epoch_val(sess, cost_op, ops, reset, num_unrolls, epoch_idx,
               summary_writer):
   """Runs one optimization epoch."""
   start = timer()
-  sess.run(reset)
+  # sess.run(reset)
   for step in xrange(num_unrolls):
     cost = sess.run([cost_op] + ops)[0]
 
@@ -66,6 +66,7 @@ def run_epoch_eval(sess,
                    ops,
                    reset_op,
                    num_unrolls,
+                   state_ops=None,
                    summary_op=None,
                    summary_writer=None,
                    run_reset=True):
@@ -74,9 +75,15 @@ def run_epoch_eval(sess,
   if run_reset:
     sess.run(reset_op)
 
+  states = []
+
   if summary_op is None:
     for step in xrange(num_unrolls):
-      cost = sess.run([cost_op] + ops)[0]
+      if state_ops is None:
+        cost = sess.run([cost_op] + ops)[0]
+      else:
+        cost, states = sess.run([cost_op] + state_ops + ops)[0]
+
       summary = tf.Summary()
       summary.value.add(tag='loss', simple_value=cost)
       summary_writer.add_summary(summary, global_step=step)
@@ -87,8 +94,11 @@ def run_epoch_eval(sess,
     for step in xrange(num_unrolls):
       # summ, cost = sess.run([summary_op, cost_op])
       # sess.run(ops)
+      if state_ops is None:
+        summ, cost, _ = sess.run([summary_op, cost_op] + state_ops + ops)
+      else:
+        summ, cost, states, _ = sess.run([summary_op, cost_op] + state_ops + ops)
 
-      summ, cost, _ = sess.run([summary_op, cost_op] + ops)
       summary = tf.Summary()
       summary.value.add(tag='loss', simple_value=cost)
       summary_writer.add_summary(summary, global_step=step)
@@ -96,10 +106,7 @@ def run_epoch_eval(sess,
       print(step, cost)
       # raw_input("wait")
 
-    # we have to run in the end to skip the error
-    sess.run(reset_op)
-
-  return timer() - start, cost
+  return timer() - start, cost, states
 
 
 def print_stats(header, total_error, total_time, n):

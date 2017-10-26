@@ -30,26 +30,30 @@ def read_csv_file(file_name):
 
 def main():
   
-  sample_rate = 1
-  # data_folder = "/home/rjliao/Projects/learning-to-learn/curves/from_1000_eval_100"
-  data_folder = "/home/rjliao/Projects/learning-to-learn/curves/from_0_eval_100"
+  sample_rate = 10
+  # data_folder = "./curves/from_1000_eval_1000"
+  # data_folder = "./curves/from_0_eval_1000"
+  data_folder = "./curves/from_1000_eval_10000_new"  
 
-  L2L_loss_file = os.path.join(data_folder, "L2L_loss.csv")
-  L2L_lr_file = os.path.join(data_folder, "L2L_learning_rate.csv")
+  L2L_loss_file = os.path.join(data_folder, "L2L_loss_max_dim.csv")
+  L2L_lr_file = os.path.join(data_folder, "L2L_learning_rate_max_dim.csv")
   SGD_loss_file = os.path.join(data_folder, "SGD_loss.csv")
+  ADAM_loss_file = os.path.join(data_folder, "ADAM_loss.csv")
 
   L2L_loss = read_csv_file(L2L_loss_file)
   L2L_lr = read_csv_file(L2L_lr_file)
   SGD_loss = read_csv_file(SGD_loss_file)
+  ADAM_loss = read_csv_file(ADAM_loss_file)
 
   steps = L2L_loss["Step"][::sample_rate]
   num_steps = len(steps)
-  curves = np.zeros([1, num_steps, 2])
+  curves = np.zeros([1, num_steps, 3])
   curves[0, :, 0] = L2L_loss["Value"][::sample_rate]
   curves[0, :, 1] = SGD_loss["Value"][::sample_rate]
+  curves[0, :, 2] = ADAM_loss["Value"][::sample_rate]
 
   plt.figure()
-  sns.tsplot(curves, time=steps, condition=["L2L", "SGD"])
+  sns.tsplot(curves, time=steps, condition=["L2L", "SGD", "ADAM"])
   plt.title("Loss vs. Training Step")
   plt.xlabel("Train Step")
   plt.ylabel("Loss")

@@ -26,6 +26,7 @@ from tensorflow.contrib.learn.python.learn import monitored_session as ms
 import os
 import meta
 import util
+import cPickle as pickle
 
 flags = tf.flags
 logging = tf.logging
@@ -55,6 +56,7 @@ def main(_):
   problem, net_config, net_assignments = util.get_config(
       FLAGS.problem, FLAGS.path)
 
+  state = None
   # Optimizer setup.
   if FLAGS.optimizer == "Adam":
     cost_op = problem()
@@ -79,9 +81,16 @@ def main(_):
       logging.warning("Evaluating untrained L2L optimizer")
     cost_op = problem()
     optimizer = meta.MetaOptimizer(**net_config)
-    meta_loss = optimizer.meta_loss(problem, 1, net_assignments=net_assignments)
-    # _, update, reset, cost_op, _ = meta_loss
-    _, update, reset, _, _ = meta_loss
+    if FLAGS.load_trained_model:
+      # optimizer.load_states([pickle.load(open(os.path.join(FLAGS.model_path, "states.p"), "rb"))])
+      # optimizer.load_states([pickle.load(open("./init_state.p", "rb"))])
+      meta_loss = optimizer.meta_loss(problem, 1, net_assignments=net_assignments, load_states=False)
+      # _, update, reset, cost_op, _ = meta_loss
+      _, update, reset, _, _, state = meta_loss
+    else:
+      meta_loss = optimizer.meta_loss(problem, 1, net_assignments=net_assignments, load_states=False)
+      # _, update, reset, cost_op, _ = meta_loss
+      _, update, reset, _, _, state = meta_loss 
   else:
     raise ValueError("{} is not a valid optimizer".format(FLAGS.optimizer))
 
@@ -120,7 +129,11 @@ def main(_):
 
     if FLAGS.load_trained_model == True:
       print("We are loading trained model here!")
-      saver.restore(regular_sess, FLAGS.model_path)
+      saver.restore(regular_sess, os.path.join(FLAGS.model_path, "model"))
+
+    # init_state = regular_sess.run(optimizer.init_state)
+    # cost_val = regular_sess.run(cost_op)
+    # import pdb; pdb.set_trace()
 
     total_time = 0
     total_cost = 0
@@ -129,11 +142,12 @@ def main(_):
       # time, cost = util.run_epoch(sess, cost_op, [update], reset,
       #                             num_unrolls)
 
-      time, cost = util.run_epoch_eval(
+      time, cost, final_states = util.run_epoch_eval(
           sess,
           cost_op, [update],
           reset,
           num_unrolls,
+          state_ops=state,
           summary_op=summaries,
           summary_writer=writer,
           run_reset=False)
@@ -143,11 +157,14 @@ def main(_):
       total_cost += cost
 
     saver.save(regular_sess, os.path.join(exp_folder, "model"))
+    pickle.dump(final_states, open(os.path.join(exp_folder, "states.p"), "wb"))
 
     # Results.
     util.print_stats("Epoch {}".format(FLAGS.num_epochs), total_cost,
                      total_time, FLAGS.num_epochs)
 
+    # we have to run in the end to skip the error
+    regular_sess.run(reset)
 
 if __name__ == "__main__":
   tf.app.run()
