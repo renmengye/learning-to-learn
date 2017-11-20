@@ -38,7 +38,7 @@ flags.DEFINE_integer("seed", 1234, "Seed for TensorFlow's RNG.")
 
 flags.DEFINE_string("problem", "simple", "Type of problem.")
 flags.DEFINE_integer("num_steps", 100,
-                     "Number of optimization steps per epoch.")
+                     "Number of optimization steps for evaluation per epoch.")
 flags.DEFINE_float("learning_rate", 0.1, "Learning rate.")
 flags.DEFINE_boolean("load_trained_model", False, "Load trained model.")
 flags.DEFINE_string("model_path", "exp/model", "Trained model path.")
@@ -46,8 +46,6 @@ flags.DEFINE_string("model_path", "exp/model", "Trained model path.")
 
 def main(_):
   # Configuration.
-  num_unrolls = FLAGS.num_steps
-
   if FLAGS.seed:
     tf.set_random_seed(FLAGS.seed)
 
@@ -118,22 +116,22 @@ def main(_):
     # Prevent accidental changes to the graph.
     tf.get_default_graph().finalize()
 
+    # print("Initial loss = {}".format(sess.run(cost_op)))
+    # raw_input("wait")
+
     if FLAGS.load_trained_model == True:
       print("We are loading trained model here!")
       saver.restore(regular_sess, FLAGS.model_path)
 
     total_time = 0
     total_cost = 0
-    for step in xrange(FLAGS.num_epochs):
-      # Training.
-      # time, cost = util.run_epoch(sess, cost_op, [update], reset,
-      #                             num_unrolls)
-
+    for step in xrange(FLAGS.num_epochs):      
       time, cost = util.run_epoch_eval(
           sess,
-          cost_op, [update],
+          cost_op, 
+          [update],
           reset,
-          num_unrolls,
+          FLAGS.num_steps,
           summary_op=summaries,
           summary_writer=writer,
           run_reset=False)

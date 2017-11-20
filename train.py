@@ -38,6 +38,7 @@ flags.DEFINE_integer("num_epochs", 10000, "Number of training epochs.")
 flags.DEFINE_integer("log_period", 100, "Log period.")
 flags.DEFINE_integer("evaluation_period", 1000, "Evaluation period.")
 flags.DEFINE_integer("evaluation_epochs", 20, "Number of evaluation epochs.")
+flags.DEFINE_integer("seed", 1234, "Seed for TensorFlow's RNG.")
 
 flags.DEFINE_string("problem", "simple", "Type of problem.")
 flags.DEFINE_integer("num_steps", 100,
@@ -50,6 +51,9 @@ flags.DEFINE_string("model_path", "exp/model", "Trained model path.")
 
 def main(_):
   # Configuration.
+  if FLAGS.seed:
+    tf.set_random_seed(FLAGS.seed)
+
   num_unrolls = FLAGS.num_steps // FLAGS.unroll_length
 
   if FLAGS.save_path is not None:
@@ -90,7 +94,7 @@ def main(_):
   saver = tf.train.Saver(saver_vars)
 
   process_id = os.getpid()
-  exp_folder = os.path.join("exp", str(process_id))  
+  exp_folder = os.path.join(FLAGS.save_path, str(process_id))  
   writer = tf.summary.FileWriter(exp_folder)
 
   with ms.MonitoredSession() as sess:
@@ -100,6 +104,9 @@ def main(_):
     # Prevent accidental changes to the graph.
     tf.get_default_graph().finalize()
 
+    # print("Initial loss = {}".format(sess.run(loss_op)))
+    # raw_input("wait")
+
     if FLAGS.load_trained_model == True:
       print("We are loading trained model here!")
       saver.restore(regular_sess, FLAGS.model_path)
@@ -107,9 +114,7 @@ def main(_):
     best_evaluation = float("inf")
     total_time = 0
     total_cost = 0
-    for e in xrange(FLAGS.num_epochs):
-      print("True loss = {}".format(sess.run(loss_op)))
-      
+    for e in xrange(FLAGS.num_epochs):      
       # Training.
       time, cost = util.run_epoch(sess, cost_op, [update, step], reset,
                                   num_unrolls, e, writer)
@@ -119,8 +124,8 @@ def main(_):
 
       # Logging.
       if (e + 1) % FLAGS.log_period == 0:
-        # util.print_stats("Epoch {}".format(e + 1), total_cost, total_time,
-        #                  FLAGS.log_period)
+        util.print_stats("Epoch {}".format(e + 1), total_cost, total_time,
+                         FLAGS.log_period)
         total_time = 0
         total_cost = 0
 
@@ -131,18 +136,20 @@ def main(_):
         for _ in xrange(FLAGS.evaluation_epochs):
           time, cost = util.run_epoch_val(sess, cost_op, [update], reset,
                                       num_unrolls, e, writer)
+
           eval_time += time
           eval_cost += cost
 
-        # util.print_stats("EVALUATION", eval_cost, eval_time,
-        #                  FLAGS.evaluation_epochs)
+        util.print_stats("EVALUATION", eval_cost, eval_time,
+                         FLAGS.evaluation_epochs)
 
         if FLAGS.save_path is not None and eval_cost < best_evaluation:
           # print("Removing previously saved meta-optimizer")
           # for f in os.listdir(FLAGS.save_path):
           #   os.remove(os.path.join(FLAGS.save_path, f))
           # print("Saving meta-optimizer to {}".format(FLAGS.save_path))
-          optimizer.save(sess, FLAGS.save_path)
+          # optimizer.save(sess, FLAGS.save_path)
+          optimizer.save(sess, exp_folder, e+1)
           best_evaluation = eval_cost
 
 

@@ -33,30 +33,27 @@ def run_epoch(sess, cost_op, ops, reset, num_unrolls, epoch_idx,
   """Runs one optimization epoch."""
   start = timer()
   sess.run(reset)
-  for step in xrange(num_unrolls):
+  for _ in xrange(num_unrolls):
     cost = sess.run([cost_op] + ops)[0]
 
-    print("Cost = {}".format(cost))
-    summary = tf.Summary()
-    summary.value.add(tag='loss', simple_value=cost)
-    summary_writer.add_summary(
-        summary, global_step=step + epoch_idx * num_unrolls)
+  summary = tf.Summary()
+  summary.value.add(tag='loss', simple_value=cost)
+  summary_writer.add_summary(summary, global_step=epoch_idx)
 
   return timer() - start, cost
 
 
 def run_epoch_val(sess, cost_op, ops, reset, num_unrolls, epoch_idx,
-              summary_writer):
+                  summary_writer):
   """Runs one optimization epoch."""
   start = timer()
   sess.run(reset)
-  for step in xrange(num_unrolls):
+  for _ in xrange(num_unrolls):
     cost = sess.run([cost_op] + ops)[0]
 
-    summary = tf.Summary()
-    summary.value.add(tag='val_loss', simple_value=cost)
-    summary_writer.add_summary(
-        summary, global_step=step + epoch_idx * num_unrolls)
+  summary = tf.Summary()
+  summary.value.add(tag='val_loss', simple_value=cost)
+  summary_writer.add_summary(summary, global_step=epoch_idx)
 
   return timer() - start, cost
 
@@ -74,30 +71,22 @@ def run_epoch_eval(sess,
   if run_reset:
     sess.run(reset_op)
 
-  if summary_op is None:
-    for step in xrange(num_unrolls):
+  for step in xrange(num_unrolls):
+    if summary_op is None:
       cost = sess.run([cost_op] + ops)[0]
-      summary = tf.Summary()
-      summary.value.add(tag='loss', simple_value=cost)
-      summary_writer.add_summary(summary, global_step=step)
-      print(step, cost)
-      # raw_input("wait")
-  else:
-    assert (summary_writer is not None)
-    for step in xrange(num_unrolls):
-      # summ, cost = sess.run([summary_op, cost_op])
-      # sess.run(ops)
-
+    else:
       summ, cost, _ = sess.run([summary_op, cost_op] + ops)
-      summary = tf.Summary()
-      summary.value.add(tag='loss', simple_value=cost)
-      summary_writer.add_summary(summary, global_step=step)
-      summary_writer.add_summary(summ, global_step=step)
-      print(step, cost)
-      # raw_input("wait")
+      
+    # print(step, cost)
+    summary = tf.Summary()
+    summary.value.add(tag='loss', simple_value=cost)
+    summary_writer.add_summary(summary, global_step=step)
 
-    # we have to run in the end to skip the error
-    sess.run(reset_op)
+    if summary_op is not None:
+      summary_writer.add_summary(summ, global_step=step)
+
+  # we have to run in the end to skip the error
+  sess.run(reset_op)
 
   return timer() - start, cost
 
@@ -175,8 +164,11 @@ def get_config(problem_name, path=None):
     }
     net_assignments = None
   elif problem_name == "mnist":
-    mode = "train" if path is None else "test"
-    problem = problems.mnist(layers=(20,), mode=mode)
+    # mode = "train" if path is None else "test"
+    mode = "train"
+    problem = problems.mnist(layers=(20,), activation="sigmoid", mode=mode)
+    # problem = problems.mnist(layers=(100,), activation="relu", mode=mode)
+    # problem = problems.mnist(layers=(20,), activation="relu", mode=mode)
     net_config = {"cw": get_default_net_config("cw", path)}
     net_assignments = None
   elif problem_name == "cifar":

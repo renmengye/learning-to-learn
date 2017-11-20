@@ -249,7 +249,7 @@ class MetaOptimizer(object):
     else:
       self._config = kwargs
 
-  def save(self, sess, path=None):
+  def save(self, sess, path=None, epoch_idx=0):
     """Save meta-optimizer."""
     result = {}
     for k, net in self._nets.items():
@@ -257,7 +257,7 @@ class MetaOptimizer(object):
         filename = None
         key = k
       else:
-        filename = os.path.join(path, "{}.l2l".format(k))
+        filename = os.path.join(path, "{}_{}.l2l".format(k, epoch_idx))
         key = filename
       net_vars = networks.save(net, sess, filename=filename)
       result[key] = net_vars

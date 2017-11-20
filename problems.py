@@ -31,8 +31,8 @@ from tensorflow.contrib.learn.python.learn.datasets import mnist as mnist_datase
 
 
 _nn_initializers = {
-    "w": tf.random_normal_initializer(mean=0, stddev=0.01),
-    "b": tf.random_normal_initializer(mean=0, stddev=0.01),
+    "w": tf.random_normal_initializer(mean=0, stddev=0.01, seed=1234),
+    "b": tf.random_normal_initializer(mean=0, stddev=0.01, seed=1234),
 }
 
 
