@@ -40,7 +40,7 @@ def factory(net, net_options=(), net_path=None):
   if net_path:
     with open(net_path, "rb") as f:
       net_options["initializer"] = pickle.load(f)
-
+  
   return net_class(**net_options)
 
 

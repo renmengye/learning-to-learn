@@ -30,7 +30,6 @@ def read_csv_file(file_name):
 
 
 def main():
-
   sample_rate = 10
   data_folder = "/home/rjliao/Projects/learning-to-learn/curves/relu_network_100_hidden"
 

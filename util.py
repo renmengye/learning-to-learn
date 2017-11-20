@@ -47,6 +47,7 @@ def run_epoch_val(sess, cost_op, ops, reset, num_unrolls, epoch_idx,
                   summary_writer):
   """Runs one optimization epoch."""
   start = timer()
+
   sess.run(reset)
   for _ in xrange(num_unrolls):
     cost = sess.run([cost_op] + ops)[0]
@@ -63,6 +64,7 @@ def run_epoch_eval(sess,
                    ops,
                    reset_op,
                    num_unrolls,
+                   state_ops=None,
                    summary_op=None,
                    summary_writer=None,
                    run_reset=True):
@@ -76,7 +78,7 @@ def run_epoch_eval(sess,
       cost = sess.run([cost_op] + ops)[0]
     else:
       summ, cost, _ = sess.run([summary_op, cost_op] + ops)
-      
+
     # print(step, cost)
     summary = tf.Summary()
     summary.value.add(tag='loss', simple_value=cost)

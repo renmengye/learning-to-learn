@@ -27,6 +27,7 @@ from tensorflow.contrib.learn.python.learn import monitored_session as ms
 
 import meta
 import util
+import cPickle as pickle
 
 flags = tf.flags
 logging = tf.logging
@@ -36,7 +37,7 @@ FLAGS = flags.FLAGS
 flags.DEFINE_string("save_path", None, "Path for saved meta-optimizer.")
 flags.DEFINE_integer("num_epochs", 10000, "Number of training epochs.")
 flags.DEFINE_integer("log_period", 100, "Log period.")
-flags.DEFINE_integer("evaluation_period", 1000, "Evaluation period.")
+flags.DEFINE_integer("evaluation_period", 10, "Evaluation period.")
 flags.DEFINE_integer("evaluation_epochs", 20, "Number of evaluation epochs.")
 flags.DEFINE_integer("seed", 1234, "Seed for TensorFlow's RNG.")
 
@@ -55,6 +56,9 @@ def main(_):
     tf.set_random_seed(FLAGS.seed)
 
   num_unrolls = FLAGS.num_steps // FLAGS.unroll_length
+
+  if FLAGS.seed:
+    tf.set_random_seed(FLAGS.seed)
 
   if FLAGS.save_path is not None:
     if os.path.exists(FLAGS.save_path):
@@ -97,6 +101,9 @@ def main(_):
   exp_folder = os.path.join(FLAGS.save_path, str(process_id))  
   writer = tf.summary.FileWriter(exp_folder)
 
+  if not os.path.isdir(exp_folder):
+    os.mkdir(exp_folder)
+
   with ms.MonitoredSession() as sess:
     # a quick hack!
     regular_sess = sess._sess._sess._sess._sess
@@ -111,6 +118,9 @@ def main(_):
       print("We are loading trained model here!")
       saver.restore(regular_sess, FLAGS.model_path)
       
+    # init_state = regular_sess.run(optimizer.init_state)
+    # pickle.dump(init_state, open("init_state.p", "wb"))
+    
     best_evaluation = float("inf")
     total_time = 0
     total_cost = 0
